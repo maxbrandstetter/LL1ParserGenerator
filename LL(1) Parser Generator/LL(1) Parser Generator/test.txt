@@ -1,0 +1,5 @@
+S > a B c
+S > a B c EXIT
+S > a EXIT b
+B > b
+EXIT > .
