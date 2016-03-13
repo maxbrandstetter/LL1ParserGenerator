@@ -149,11 +149,21 @@ void ParserGenerator::leftFactor(vector<string> rules)
 	vector<string> newRhs; // Store remaining rhs of rules to be factored
 	vector<string> newRules; // Stores new rules, used in recursion to check for proper left factoring
 	vector<string>::iterator vectorItr;
+	vector<string>::iterator storedItr = rules.end(); // Use as storage throughout function, for resetting
+
+	bool factored = true; // When true, the grammar is properly left factored and the recursion will exit
 
 	// Loop through the vector of rules and operate on each rule
 	for (vectorItr = rules.begin(); vectorItr != rules.end(); ++vectorItr)
 	{
+		if (storedItr != rules.end())
+		{
+			vectorItr = storedItr; // Set the current vectorItr to the stored position
+			storedItr = rules.end(); // Set to rules.end() to reset for next iteration
+		}
+
 		string firstRule = *vectorItr; // Set vectorItr to the current rule
+		storedRule.clear(); // Empty the stored rule for the new iteration
 		string firstNonterm; // Store the first nonterminal
 		vector<string>::iterator compareItr;
 
@@ -180,6 +190,7 @@ void ParserGenerator::leftFactor(vector<string> rules)
 						// If they are the same, keep iterating until they differ
 						if (firstRule[i] == secondRule[i])
 						{
+							factored = false; // Set to false since left factoring is needed
 							size_t startPos = i;
 							// Iterate...
 							while (firstRule[i] == secondRule[i])
@@ -191,7 +202,9 @@ void ParserGenerator::leftFactor(vector<string> rules)
 							break;
 						}
 						else
+						{
 							break;
+						}
 					}
 				}
 				else
@@ -218,7 +231,10 @@ void ParserGenerator::leftFactor(vector<string> rules)
 				}
 			}
 			else
-				continue;
+			{
+				storedItr = compareItr;
+				break;
+			}
 		}
 
 		vector<string>::iterator ruleItr;
@@ -240,7 +256,7 @@ void ParserGenerator::leftFactor(vector<string> rules)
 					{
 						size_t startPos = i;
 						// Iterate...
-						while (currentRule[i] == storedRule[i])
+						while ((currentRule[i] == storedRule[i]) && (currentRule[i] != '\0')) 
 						{
 							++i;
 						}
@@ -262,7 +278,10 @@ void ParserGenerator::leftFactor(vector<string> rules)
 					}
 				}
 				else
+				{
 					newRules.push_back(*ruleItr);
+					break;
+				}
 			}
 				
 			
@@ -270,41 +289,56 @@ void ParserGenerator::leftFactor(vector<string> rules)
 
 		// REMOVE OLD RULES X
 		// ADD NEW NONTERMINAL X
-		// ADD NEW RULE 
-		// ADD RULE(S) FOR NEW NONTERMINAL
+		// ADD NEW RULE X
+		// ADD RULE(S) FOR NEW NONTERMINAL X
 		// REPEAT
 
-		// Add a new nonterminal for our left factored rules
-		bool nontermCreated = false;
-		string newNonterm;
-
-		while (nontermCreated == false)
+		// Only iterate if there is a stored rule and are trying to left factor
+		if (!storedRule.empty())
 		{
-			newNonterm = firstNonterm + '\'';
+			// Add a new nonterminal for our left factored rules
+			bool nontermCreated = false;
+			string newNonterm;
 
-			// Check if the new nonterminal already exists
-			if (find(m_nonTerms.begin(), m_nonTerms.end(), newNonterm) != m_nonTerms.end())
-				; // If so, do nothing
-			else
+			while (nontermCreated == false)
 			{
-				m_nonTerms.push_back(newNonterm); // Push new non terminal
-				nontermCreated = true; // Set to true to exit loop
-			}
-		}
+				newNonterm = firstNonterm + '\'';
 
-		// Merge the changed rules into one with the new nonterminal at the end; for left factoring
-		string ruleToPush = firstNonterm + " > " + storedRule + newNonterm; // Create the rule from known components
-		newRules.push_back(ruleToPush); // Push the new rule
- 
-		// Iterate through remaining rhs
-		vector<string>::iterator rhsItr = newRhs.begin();
-		while (rhsItr != newRhs.end())
-		{
-			ruleToPush = newNonterm + " > " + *rhsItr; // Create a new rule from rhs parts
+				// Check if the new nonterminal already exists
+				if (find(m_nonTerms.begin(), m_nonTerms.end(), newNonterm) != m_nonTerms.end())
+					; // If so, do nothing
+				else
+				{
+					m_nonTerms.push_back(newNonterm); // Push new non terminal
+					nontermCreated = true; // Set to true to exit loop
+				}
+			}
+
+			// Merge the changed rules into one with the new nonterminal at the end; for left factoring
+			string ruleToPush = firstNonterm + " > " + storedRule + " " + newNonterm; // Create the rule from known components
 			newRules.push_back(ruleToPush); // Push the new rule
-			++rhsItr; // Increment
+ 
+			// Iterate through remaining rhs
+			vector<string>::iterator rhsItr = newRhs.begin();
+			while (rhsItr != newRhs.end())
+			{
+				if (*rhsItr == "")
+					ruleToPush = newNonterm + " > ."; // Create lambda rule if the rhsItr is an empty string
+				else
+					ruleToPush = newNonterm + " > " + *rhsItr; // Create a new rule from rhs parts
+				newRules.push_back(ruleToPush); // Push the new rule
+				++rhsItr; // Increment
+			}
 		}
 
 
 	}
+
+	if (factored)
+	{
+		m_rules = rules; // Set the member variable to the left factored grammar
+		return;
+	}
+	else
+		leftFactor(newRules);
 }
