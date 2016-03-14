@@ -1,5 +1,6 @@
-S > a B c
-S > a B c EXIT
-S > a EXIT b
+S > A a
+A > B D
 B > b
-EXIT > .
+B > . 
+D > d 
+D > .

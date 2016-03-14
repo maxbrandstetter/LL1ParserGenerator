@@ -13,15 +13,24 @@
 #include "ParserGenerator.h"
 
 #include <iostream>
-#include <fstream>
 #include <sstream>
 #include <algorithm>
+#include <iomanip>
 
 using namespace std;
 
 
 // Constructor, performs initial processing such as file reading and storage
 ParserGenerator::ParserGenerator()
+{
+	start();
+}
+
+// Destructor
+ParserGenerator::~ParserGenerator()
+{}
+
+void ParserGenerator::start()
 {
 	cout << "Welcome to the LL(1) Parser Generator!" << endl;
 	cout << "Make sure your grammar follows the following format:" << endl << endl;
@@ -39,12 +48,14 @@ ParserGenerator::ParserGenerator()
 	getTerm();
 	// Left factor the rules
 	leftFactor(m_rules);
+	// Expand rules into all productions available from a rule
+	expandRules();
+	// Get the first set of each rule
 	getFirstSet();
+	// Get the follow set of each rule
+	// Create the LL(1) parse table
+	createTable();
 }
-
-// Destructor
-ParserGenerator::~ParserGenerator()
-{}
 
 // Opens and processes the given file, stores grammar rules
 void ParserGenerator::getRules()
@@ -136,6 +147,10 @@ void ParserGenerator::getTerm()
 						// Check if the terminal in question is a nonterminal
 						if (find(m_nonTerms.begin(), m_nonTerms.end(), terminal) != m_nonTerms.end())
 							continue; // Do nothing
+
+						if (terminal == ".")
+							continue; // Do nothing if it's a lambda production
+
 						m_terms.push_back(terminal); // Otherwise, push the terminal
 					}
 				}
@@ -354,7 +369,6 @@ void ParserGenerator::getFirstSet()
 {
 	string first_nonterm;
 	string str_rule;
-	string first_item;
 	string buffer;
 	int split_loc; // Location of the ">" in the string
 	int space_loc; // Location of the space following the first terminal or nonterminal
@@ -365,7 +379,7 @@ void ParserGenerator::getFirstSet()
 	// Set nonterminals of first sets
 	GrammarSet set;
 
-	for (int i = 0; i < m_nonTerms.size(); ++i)
+	for (size_t i = 0; i < m_nonTerms.size(); ++i)
 	{
 		set.setNonTerm(m_nonTerms[i]);
 		m_firstSets.push_back(set);
@@ -381,10 +395,9 @@ void ParserGenerator::getFirstSet()
 		// Get the terminals (RHS)
 		buffer = str_rule.substr(split_loc + 2);
 		space_loc = buffer.find(" ");
-		first_item = buffer.substr(0, space_loc);
 		
 		// Check that the terminal we are operating is a nonterminal
-		for (int idx = 0; idx < m_firstSets.size(); ++idx)
+		for (size_t idx = 0; idx < m_firstSets.size(); ++idx)
 		{
 			string checkNonterm = m_firstSets[idx].getNonTerm();
 			
@@ -392,13 +405,21 @@ void ParserGenerator::getFirstSet()
 			if (first_nonterm == checkNonterm)
 			{
 				// Split the item string by spaces to get just the terminals
-				stringstream ss(first_item);
+				stringstream ss(buffer);
 				istream_iterator<string> begin(ss);
 				istream_iterator<string> end;
 				vector<string> terms(begin, end); // And store them here
 
-				// Push the terminal
-				m_firstSets[idx].addTerminal(terms[0]);
+				// Check for a lambda production until every terminal has been added, or a lambda production is NOT found in the current terminal
+				
+				for (size_t yetAnotherIdx = 0; yetAnotherIdx < terms.size(); ++yetAnotherIdx)
+				{
+					m_firstSets[idx].addTerminal(terms[yetAnotherIdx]);
+
+					if (!checkForLambda(terms[yetAnotherIdx]))
+						break;
+				}
+				
 			}
 		}
 	}
@@ -406,11 +427,37 @@ void ParserGenerator::getFirstSet()
 	replaceNonterms();
 }
 
+// Checks for a lambda production in the given nonterminal and returns true if one is found
+bool ParserGenerator::checkForLambda(string nonTerm)
+{
+	// Check if the first term is a nonterminal
+	if (find(m_nonTerms.begin(), m_nonTerms.end(), nonTerm) != m_nonTerms.end())
+	{
+		// Loop through the expanded rules
+		for (size_t anotherIdx = 0; anotherIdx < m_ruleProductions.size(); ++anotherIdx)
+		{
+			// Check if the current expanded rule is for the current nonterminal
+			if (m_ruleProductions[anotherIdx].getNonTerm() == nonTerm)
+			{
+				// Check for a lambda production in the current nonterminal
+				vector<string> tempTerms = m_ruleProductions[anotherIdx].getTermVector();
+				if (find(tempTerms.begin(), tempTerms.end(), ".") != tempTerms.end())
+				{
+					return true; // If there's a lambda production, return true
+				}
+				
+			}
+		}
+	}
+	
+	return false; // Return false if there is no lambda production in the current terminalt
+}
+
 // Replace any nonterminals in the first sets
 void ParserGenerator::replaceNonterms()
 {
 	// Loop through first sets and replace any terminals listed as nonterminals with their first sets
-	int idx;
+	size_t idx;
 	bool replaced = true;
 	vector<int> toRemove;
 
@@ -420,7 +467,7 @@ void ParserGenerator::replaceNonterms()
 		vector<string> terms = m_firstSets[idx].getTermVector();
 
 		// Check each terminal
-		for (int j = 0; j < terms.size(); ++j)
+		for (size_t j = 0; j < terms.size(); ++j)
 		{
 			// See if it's a nonterminal
 			if (find(m_nonTerms.begin(), m_nonTerms.end(), terms[j]) != m_nonTerms.end())
@@ -431,14 +478,14 @@ void ParserGenerator::replaceNonterms()
 				replaced = false;
 
 				// Find the first set with the correct nonterminal
-				for (int h = 0; h < m_firstSets.size(); ++h)
+				for (size_t h = 0; h < m_firstSets.size(); ++h)
 				{
 					if (m_firstSets[h].getNonTerm() == terms[j])
 						newTerms = m_firstSets[h].getTermVector();
 				}
 
 				// Add each terminal from the matched nonterminal to the first set in question
-				for (int h = 0; h < newTerms.size(); ++h)
+				for (size_t h = 0; h < newTerms.size(); ++h)
 				{
 					m_firstSets[idx].addTerminal(newTerms[h]);
 				}
@@ -455,4 +502,248 @@ void ParserGenerator::replaceNonterms()
 
 	if (replaced == false)
 		replaceNonterms(); // Recurse if a replacement occurred to check for other replacements
+}
+
+// Generates the LL(1) Table and outputs it to a file
+void ParserGenerator::createTable()
+{
+	ofstream fout;
+	fout.setf(ios::fixed);
+
+	string filename;
+
+	cout << "Please enter a name for the output file: ";
+	cin >> filename;
+	cout << endl;
+
+	fout.open(filename);
+
+	if (fout.fail())
+	{
+		cout << "Output file could not be created, aborting LL(1) table creation." << endl;
+		return;
+	}
+
+	fout << left << setw(30) << "";
+
+	for (size_t i = 0; i < m_terms.size(); ++i)
+	{
+		// Don't include lambda productions as part of the parse table headers
+		if (m_terms[i] == ".")
+			continue;
+		fout << left << setw(30) << m_terms[i];
+	}
+
+	// Loop through the first sets, representing rows
+	for (size_t i = 0; i < m_firstSets.size(); ++i)
+	{
+		fout << "\n" << left << setw(30) << m_firstSets[i].getNonTerm();
+		// Loop through the terminals, representing columns
+		for (size_t j = 0; j < m_terms.size(); ++j)
+		{
+			makeCell(fout, i, j);
+		}
+	}
+
+	cout << filename << " was created successfully." << endl;
+}
+
+// Creates and fills a cell for the LL(1) table
+void ParserGenerator::makeCell(ofstream &fout, int row, int column)
+{
+	bool written = false; // True if the function has written to the file, false otherwise
+	
+	// Loop through the vector of rules and operate on each rule
+	for (size_t vectorIdx = 0; vectorIdx < m_rules.size(); ++vectorIdx)
+	{
+		string tempRule = m_rules[vectorIdx]; // Set nonTerm to the current rule
+
+		size_t idx = tempRule.find('>'); // Get the position of >
+		string nonTerm = tempRule.substr(0, idx - 1); // Set nonTerm to the nonterminal
+
+		vector<string> firstTerms = m_firstSets[row].getTermVector();
+		//vector<string> followTerms = m_followSets[row].getTermVector();
+
+		// Make sure that the rule has the right nonterminal
+		if (m_firstSets[row].getNonTerm() == nonTerm)
+		{
+			// Check if the nonterminal has a first set containing the column terminal
+			if (find(firstTerms.begin(), firstTerms.end(), m_terms[column]) != firstTerms.end())
+			{
+				// Loop through expanded productions to find valid rules
+				for (size_t i = 0; i < m_ruleProductions.size(); ++i)
+				{
+					// Only move on to writing if the rule corresponds to the expanded productions
+					if (vectorIdx == i)
+					{
+						// Check that the rule production has the same nonterminal as the rule in use
+						if (m_ruleProductions[i].getNonTerm() == nonTerm)
+						{
+							vector<string> tempVector = m_ruleProductions[i].getTermVector();
+							// Check if the column terminal is in the productions
+							if (find(tempVector.begin(), tempVector.end(), m_terms[column]) != tempVector.end())
+							{
+								if (written == false)
+								{
+									written = true;
+									fout << left << setw(30) << m_rules[i]; // If so, write a cell to the file
+								}
+								else
+									cout << "Grammar is not LL(1), clash in row " << row << " column " << column << ". Table creation will continue." << endl;
+							}
+						}
+					}
+
+				}
+			}
+
+			/* Lambda productions below; remove notation once follow set is finished
+			// Check if the current nonterminal contains a lambda production in the first set
+			if (find(firstTerms.begin(), firstTerms.end(), ".") != firstTerms.end())
+			{
+				// Check if the nonterminal has a follow set containing the column terminal
+				if (find(followTerms.begin(), followTerms.end(), m_terms[column]) != followTerms.end())
+				{
+					if (written == false)
+					{
+						// Loop through the rules to find one with the same nonterminal
+						for (size_t i = 0; i < m_rules.size(); ++i)
+						{
+							
+							tempRule = m_rules[i]; // Set tempRule
+							size_t idx = tempRule.find('>'); // Get the position of >
+							string currentNonTerm = tempRule.substr(0, idx - 1); // Set nonTerminal to JUST the nonterminal
+							tempRule = tempRule.substr(idx + 2); // Set tempRule to everything past the >
+
+							if (currentNonTerm == m_nonTerms[row])
+							{
+								// Split the rule string by spaces to get just the terminals
+								stringstream ss(tempRule);
+								istream_iterator<string> begin(ss);
+								istream_iterator<string> end;
+								vector<string> terms(begin, end); // And store them here
+
+								// Check if the current rule contains a lambda production
+								if (find(terms.begin(), terms.end(), ".") != terms.end())
+								{
+									writtern = true;
+									fout << left << setw(30) << m_rules[i];
+								}
+							}
+						}
+					}
+				}
+			}
+
+			*/
+		}
+		else
+			continue;
+	}
+
+	
+	if (written == false)
+		fout << left << setw(30) << ""; // Create an empty cell if nothing was written
+}
+
+// Expands all grammar rules by substituting nonterminals for their productions
+void ParserGenerator::expandRules()
+{
+	string tempRule;
+	vector<string> newTerms; // Store new "rules" here to be pushed
+	vector<string>::iterator vectorItr;
+
+	// Loop through the vector of rules and operate on each rule
+	for (vectorItr = m_rules.begin(); vectorItr != m_rules.end(); ++vectorItr)
+	{
+		newTerms.clear();
+		tempRule = *vectorItr; // Set tempRule to the current rule
+
+		size_t idx = tempRule.find('>'); // Get the position of >
+		string currentNonTerm = tempRule.substr(0, idx - 1); // Set nonTerminal to JUST the nonterminal
+		tempRule = tempRule.substr(idx + 2); // Set tempRule to everything past the >
+
+		// Split the rule string by spaces to get just the terminals
+		stringstream ss(tempRule);
+		istream_iterator<string> begin(ss);
+		istream_iterator<string> end;
+		vector<string> terms(begin, end); // And store them here
+
+		// Loop through terms
+		for (size_t i = 0; i < terms.size(); ++i)
+		{
+			// Check if the current term is a nonterminal
+			if (find(m_nonTerms.begin(), m_nonTerms.end(), terms[i]) != m_nonTerms.end())
+			{
+				vector<string> tempTerms = ruleToTerms(terms[i], vectorItr); // Set newTerms to the result
+
+				// Loop through tempTerms and push each terminal
+				for (size_t j = 0; j < tempTerms.size(); ++j)
+				{
+					newTerms.push_back(tempTerms[j]);
+				}
+			}
+			else
+				newTerms.push_back(terms[i]);
+		}
+
+		GrammarSet toPush;
+		toPush.setNonTerm(currentNonTerm);
+		for (size_t i = 0; i < newTerms.size(); ++i)
+		{
+			toPush.addTerminal(newTerms[i]);
+		}
+		m_ruleProductions.push_back(toPush);
+	}
+}
+
+// Smaller version of expandRules, returns the terminal productions from one rule
+vector<string> ParserGenerator::ruleToTerms(string nonTerm, vector<string>::iterator originalRule)
+{
+	string tempRule;
+	vector<string> newTerms; // Store new "rules" here to be pushed
+	vector<string>::iterator vectorItr;
+
+	// Loop through the vector of rules and operate on each rule
+	for (vectorItr = m_rules.begin(); vectorItr != m_rules.end(); ++vectorItr)
+	{
+		tempRule = *vectorItr; // Set tempRule to the current rule
+
+		size_t idx = tempRule.find('>'); // Get the position of >
+		string currentNonTerm = tempRule.substr(0, idx - 1); // Set nonTerminal to JUST the nonterminal
+
+		if ((currentNonTerm == nonTerm) && (vectorItr != originalRule))
+		{
+			tempRule = tempRule.substr(idx + 2); // Set tempRule to everything past the >
+
+			// Split the rule string by spaces to get just the terminals
+			stringstream ss(tempRule);
+			istream_iterator<string> begin(ss);
+			istream_iterator<string> end;
+			vector<string> terms(begin, end); // And store them here
+
+			// Loop through terms
+			for (size_t i = 0; i < terms.size(); ++i)
+			{
+				// Check if the current term is a nonterminal
+				if (find(m_nonTerms.begin(), m_nonTerms.end(), terms[i]) != m_nonTerms.end())
+				{
+					vector<string> tempTerms = ruleToTerms(terms[i], vectorItr); // Set newTerms to the result
+
+					// Loop through tempTerms and push each terminal
+					for (size_t j = 0; j < tempTerms.size(); ++j)
+					{
+						newTerms.push_back(tempTerms[j]);
+					}
+				}
+				else
+					newTerms.push_back(terms[i]);
+			}
+
+		}
+		else 
+			continue;
+	}
+
+	return newTerms; // Return after everything has been expanded
 }
