@@ -15,6 +15,8 @@
 *
 *************************************************************************/
 
+#include "GrammarSet.h"
+
 #include <string>
 #include <vector>
 
@@ -29,11 +31,13 @@ class ParserGenerator
 		void getNonterm(); // Goes through the stored rules and stores all nonterminals
 		void getTerm(); // Goes through the stored rules and stores all terminals
 		void leftFactor(vector<string> rules); // Left factors the grammar based on the stored rules
+		void getFirstSet(); // Uses the left factored rules to generate the first sets
+		void replaceNonterms(); // Replace any nonterminals in the first sets
 
 	private:
 		vector<string> m_rules; // Stores grammar rules
 		vector<string> m_nonTerms; // Stores nonterminals of the grammar
 		vector<string> m_terms; // Stores terminals of the grammar
 		vector<string> m_factoredRules; // Stores all left factored grammar rules
-
+		vector<GrammarSet> m_firstSets; //Stores the first set of all rules
 };

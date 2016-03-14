@@ -76,9 +76,11 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClInclude Include="GrammarSet.h" />
     <ClInclude Include="ParserGenerator.h" />
   </ItemGroup>
   <ItemGroup>
+    <ClCompile Include="GrammarSet.cpp" />
     <ClCompile Include="main.cpp" />
     <ClCompile Include="ParserGenerator.cpp" />
   </ItemGroup>

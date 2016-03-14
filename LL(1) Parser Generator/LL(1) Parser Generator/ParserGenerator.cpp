@@ -14,6 +14,8 @@
 
 #include <iostream>
 #include <fstream>
+#include <sstream>
+#include <algorithm>
 
 using namespace std;
 
@@ -37,6 +39,7 @@ ParserGenerator::ParserGenerator()
 	getTerm();
 	// Left factor the rules
 	leftFactor(m_rules);
+	getFirstSet();
 }
 
 // Destructor
@@ -95,7 +98,6 @@ void ParserGenerator::getNonterm()
 		else
 			m_nonTerms.push_back(temp); // Otherwise, push the nonterminal
 	}
-
 }
 
 // Goes through the stored rules and stores all terminals
@@ -287,12 +289,6 @@ void ParserGenerator::leftFactor(vector<string> rules)
 			
 		}
 
-		// REMOVE OLD RULES X
-		// ADD NEW NONTERMINAL X
-		// ADD NEW RULE X
-		// ADD RULE(S) FOR NEW NONTERMINAL X
-		// REPEAT
-
 		// Only iterate if there is a stored rule and are trying to left factor
 		if (!storedRule.empty())
 		{
@@ -315,7 +311,11 @@ void ParserGenerator::leftFactor(vector<string> rules)
 			}
 
 			// Merge the changed rules into one with the new nonterminal at the end; for left factoring
-			string ruleToPush = firstNonterm + " > " + storedRule + " " + newNonterm; // Create the rule from known components
+			string ruleToPush;
+			if (isspace(storedRule[storedRule.size() - 1]))
+				ruleToPush = firstNonterm + " > " + storedRule + newNonterm; // Create the rule from known components
+			else
+				ruleToPush = firstNonterm + " > " + storedRule + " " + newNonterm; // Create the rule from known components
 			newRules.push_back(ruleToPush); // Push the new rule
  
 			// Iterate through remaining rhs
@@ -325,7 +325,13 @@ void ParserGenerator::leftFactor(vector<string> rules)
 				if (*rhsItr == "")
 					ruleToPush = newNonterm + " > ."; // Create lambda rule if the rhsItr is an empty string
 				else
-					ruleToPush = newNonterm + " > " + *rhsItr; // Create a new rule from rhs parts
+				{
+					string rhsString = *rhsItr;
+					if (isspace(rhsString[0]))
+						ruleToPush = newNonterm + " >" + rhsString;
+					else
+						ruleToPush = newNonterm + " > " + *rhsItr; // Create a new rule from rhs parts
+				}
 				newRules.push_back(ruleToPush); // Push the new rule
 				++rhsItr; // Increment
 			}
@@ -341,4 +347,112 @@ void ParserGenerator::leftFactor(vector<string> rules)
 	}
 	else
 		leftFactor(newRules);
+}
+
+// Uses the left factored rules to generate the First set
+void ParserGenerator::getFirstSet()
+{
+	string first_nonterm;
+	string str_rule;
+	string first_item;
+	string buffer;
+	int split_loc; // Location of the ">" in the string
+	int space_loc; // Location of the space following the first terminal or nonterminal
+
+	int nonTerms_size = m_nonTerms.size();
+	int rule_size = m_rules.size();
+
+	// Set nonterminals of first sets
+	GrammarSet set;
+
+	for (int i = 0; i < m_nonTerms.size(); ++i)
+	{
+		set.setNonTerm(m_nonTerms[i]);
+		m_firstSets.push_back(set);
+	}
+
+	for (int i = 0; i < rule_size; ++i)
+	{
+		// Get the nonterminal
+		str_rule = m_rules[i];
+		split_loc = str_rule.find(">");
+		first_nonterm = str_rule.substr(0, split_loc - 1);
+
+		// Get the terminals (RHS)
+		buffer = str_rule.substr(split_loc + 2);
+		space_loc = buffer.find(" ");
+		first_item = buffer.substr(0, space_loc);
+		
+		// Check that the terminal we are operating is a nonterminal
+		for (int idx = 0; idx < m_firstSets.size(); ++idx)
+		{
+			string checkNonterm = m_firstSets[idx].getNonTerm();
+			
+			// If the current first set matches the nonterminal of our rule, modify it by adding new terminals
+			if (first_nonterm == checkNonterm)
+			{
+				// Split the item string by spaces to get just the terminals
+				stringstream ss(first_item);
+				istream_iterator<string> begin(ss);
+				istream_iterator<string> end;
+				vector<string> terms(begin, end); // And store them here
+
+				// Push the terminal
+				m_firstSets[idx].addTerminal(terms[0]);
+			}
+		}
+	}
+
+	replaceNonterms();
+}
+
+// Replace any nonterminals in the first sets
+void ParserGenerator::replaceNonterms()
+{
+	// Loop through first sets and replace any terminals listed as nonterminals with their first sets
+	int idx;
+	bool replaced = true;
+	vector<int> toRemove;
+
+	for (idx = 0; idx < m_firstSets.size(); ++idx)
+	{
+		toRemove.clear();
+		vector<string> terms = m_firstSets[idx].getTermVector();
+
+		// Check each terminal
+		for (int j = 0; j < terms.size(); ++j)
+		{
+			// See if it's a nonterminal
+			if (find(m_nonTerms.begin(), m_nonTerms.end(), terms[j]) != m_nonTerms.end())
+			{
+				// If so, replace with contents of that nonterminal's first set
+				vector<string> newTerms;
+				toRemove.push_back(j);
+				replaced = false;
+
+				// Find the first set with the correct nonterminal
+				for (int h = 0; h < m_firstSets.size(); ++h)
+				{
+					if (m_firstSets[h].getNonTerm() == terms[j])
+						newTerms = m_firstSets[h].getTermVector();
+				}
+
+				// Add each terminal from the matched nonterminal to the first set in question
+				for (int h = 0; h < newTerms.size(); ++h)
+				{
+					m_firstSets[idx].addTerminal(newTerms[h]);
+				}
+
+			}
+		}
+
+		// Remove the replaced nonterminals as stored in toRemove
+		for (int j = toRemove.size() - 1; j >= 0; --j)
+		{
+			m_firstSets[idx].removeTerminal(toRemove[j]);
+		}
+	}
+
+	if (replaced == false)
+		replaceNonterms(); // Recurse if a replacement occurred to check for other replacements
 }
