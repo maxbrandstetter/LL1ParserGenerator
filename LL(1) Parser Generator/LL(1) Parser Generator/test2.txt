@@ -1,0 +1,9 @@
+S > A B C d
+A > e
+A > f
+A > .
+B > g
+B > h
+B > .
+C > p
+C > q
